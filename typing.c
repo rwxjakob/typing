@@ -16,6 +16,7 @@
 #include <assert.h>
 #include <errno.h> 
 
+#define GOTO(x,y) printf("\033[%d;%dH", (y), (x))
 #define MOVE_UP(y) printf("\033[%dA",(y))
 #define MOVE_DOWN(y) printf("\033[%dB",(y))
 #define MOVE_RIGHT(x) printf("\033[%dC",(x))
@@ -43,8 +44,12 @@ struct typing_config{
   char *langauge;
   char *mode;
   double average_wpm;
+  int words;
   double average_erros;
+  int erros;
   double average_word_erros;
+  int word_erros;
+  int attemps;
 };
 
 struct typing_config config;
@@ -107,6 +112,7 @@ char read_input(){
 void menu(){
   int pos, pos2;
   char c, l;
+
   printf("%s", ANSI_CLEAR_SCREEN);
   printf("\e[?25h");
   printf("LANGAUGE| \nMODE\t| ");
@@ -137,54 +143,72 @@ void menu(){
         if(pos == 0){
           printf("%s",ANSI_CLEAR_SCREEN);
           for(int i=0; i<NUM_LANGUGES;i++) printf("%s\n", langauges[i]);
+          GOTO(strlen(langauges[0])+1,0);
 
           while(1){
-            
             l = read_input();
+            
             switch(l){
 
-            case 'w':
-              if(pos2> 0){
-                pos2--;
-                MOVE_UP(1);
-              }
-              continue;
-            case 's':
-              if(pos2< 2){
-                pos2++;
-                MOVE_DOWN(1);
-              }
-              continue;
-            case '\n':
-              config.langauge = langauges[pos2];
+              case 'w':
+                if(pos2> 0){
+                  pos2--;
+                  MOVE_UP(1);
+                }
+                continue;
+
+              case 's':
+                if(pos2< 2){
+                  pos2++;
+                  MOVE_DOWN(1);
+                }
+                continue;
+
+              case '\n':
+                config.langauge = langauges[pos2];
+
+              case '\x1b':
+                printf("%s", ANSI_CLEAR_SCREEN);
+                return;
             }
           }
         }else if(pos == 1){
           printf("%s",ANSI_CLEAR_SCREEN);
           for(int i=0; i<NUM_MODES; i++) printf("%s\n", modes[i]);
+          GOTO(strlen(modes[0])+1,0);
+
           while(1){
             l = read_input();
+
             switch(l){
 
-            case 'w':
-              if(pos2> 0){
-                pos2--;
-                MOVE_UP(1);
-              }
-              continue;
-            case 's':
-              if(pos < 2){
-                pos++;
-                MOVE_DOWN(1);
-              }
-              continue;
-            case '\n':
-              config.mode = modes[pos2];
+              case 'w':
+                if(pos2> 0){
+                  pos2--;
+                  MOVE_UP(1);
+                }
+                continue;
+
+              case 's':
+                if(pos2 < 2){
+                  pos2++;
+                  MOVE_DOWN(1);
+                }
+                continue;
+
+              case '\n':
+                config.mode = modes[pos2];
+
+              case '\x1b': 
+                printf("%s", ANSI_CLEAR_SCREEN);
+                return;
             }
           }
         }
         continue;
+
       case '\x1b': 
+        printf("%s", ANSI_CLEAR_SCREEN);
         printf("\e[?25h");
         return;
     }
@@ -196,11 +220,13 @@ void menu(){
 
 
 int count_words(const char sentence[]){
-    int counted = 0; // result
+    int counted;
+    const char* it;
+    int inword;
 
-    // state:
-    const char* it = sentence;
-    int inword = 0;
+    it = sentence;
+    inword = 0;
+    counted = 0;
 
     do switch(*it){
         case '\0': 
@@ -225,16 +251,21 @@ int compare(char input, char character){
   if(input == character){
     printf("%s%c",ANSI_COLOR_GREEN, character);
     printf("%s",ANSI_COLOR_RESET);
+
     return 0;
   }else{
     printf("%s%c",ANSI_COLOR_RED, character);
     printf("%s",ANSI_COLOR_RESET);
+
     return 1;
   }
 }
 
 int calculate_wpm(double duration, int words, int word_mistakes){
   int wpm = (int) (words-word_mistakes)  * 60 / duration;
+
+  config.words += wpm;
+  config.average_wpm = (double)config.words / config.attemps;
 
   return wpm;
 }
@@ -250,17 +281,24 @@ int calculate_word_mistakes(char *input, char *text){
   while(input_position != strlen(input)){
     if(input[input_position] != text[text_position]){
       word_mistakes++;
+
       while(input[input_position] != ' '){
         input_position++;
       }
+
       while(text[text_position] != ' '){
         text_position++;
       }
     }
+
     input_position++;
     text_position++;
   }
-  printf("\nmistakes: %d\n", word_mistakes);
+
+  config.attemps++;
+  config.word_erros += word_mistakes;
+  config.average_word_erros = (double)config.word_erros / config.attemps;
+
   return word_mistakes;
 }
 
@@ -270,38 +308,38 @@ void display_stats(int wpm, int typing_erros, int word_erros){
   printf("WPM: %d\n",wpm);
   printf("%sTYPING ERROS:: %d\n",ANSI_COLOR_RED, typing_erros);
   printf("%sTYPING ERROS:: %d\n",ANSI_COLOR_MAGENTA, word_erros);
+  printf("%sAVERAGE WPM: %.2lf\n",ANSI_COLOR_GREEN, config.average_wpm);
+  printf("%sAVERAGE WORD ERROS: %.2lf\n",ANSI_COLOR_GREEN, config.average_word_erros);
+  printf("%sAVERAGE ERROS: %.2lf\n",ANSI_COLOR_GREEN, config.average_erros);
   printf("%s----------------------------------------------%s",ANSI_COLOR_BLUE,ANSI_COLOR_RESET);
 }
 
 int randint(int n) {
+  int r;
+  int end; 
+  end = RAND_MAX / n; 
+
   if ((n - 1) == RAND_MAX) {
     return rand();
   }else{
-    // Supporting larger values for n would requires an even more
-    // elaborate implementation that combines multiple calls to rand()
     assert (n <= RAND_MAX);
 
-    // Chop off all of the values that would cause skew...
-    int end = RAND_MAX / n; // truncate skew
     assert (end > 0);
     end *= n;
 
-    // ... and ignore results from rand() that fall above that limit.
-    // (Worst case the loop condition should succeed 50% of the time,
-    // so we can expect to bail out of this loop pretty quickly.)
-    int r;
-    while ((r = rand()) >= end);
+    while((r = rand()) >= end);
 
     return r % n;
   }
 }
 
 char *get_sentence(){
-  char line[200][256];
-  char *fname; 
-  FILE *fptr = NULL; 
-  int i = 0;
-  int tot = 0;
+  char *fname, line[200][256]; 
+  FILE *fptr;
+  int i, tot;
+
+  tot = 0;
+  i = 0;
 
   if(strcmp(config.langauge ,"en") == 0){
     if(strcmp(config.mode, "sentence") == 0){
@@ -310,7 +348,11 @@ char *get_sentence(){
       fname = "sentences.txt";
     }
   }else if(strcmp(config.langauge ,"de") == 0){
-  
+    if(strcmp(config.mode, "sentence") == 0){
+      fname = "english_sentences.txt";
+    }else if(strcmp(config.mode, "quote") == 0){
+      fname = "sentences.txt";
+    }
   }
 
 
@@ -330,7 +372,7 @@ char *get_sentence(){
 void mainloop(){
   char *text, *total_input, input, game_state;
   size_t text_len; 
-  int text_pos, words, wpm, typing_erros, word_erros, random_number;
+  int text_pos, words, wpm, typing_erros, word_erros;
   time_t clock_start, clock_end; 
   double total_time;
 
@@ -342,8 +384,8 @@ void mainloop(){
 
     text = get_sentence();
     text_len = strlen(text);
-    total_input = (char*) malloc((text_len+128)*sizeof(char));;
     text_pos = 0;
+    total_input = (char*) malloc((text_len+128)*sizeof(char));;
     typing_erros = 0;
     words = count_words(text);
     clock_start = time(NULL);
@@ -382,6 +424,8 @@ void mainloop(){
 
     word_erros = calculate_word_mistakes(total_input, text);
     wpm = calculate_wpm(total_time, words, word_erros);
+    config.erros += typing_erros;
+    config.average_erros = (double)config.erros/config.attemps;
 
     display_stats(wpm, typing_erros, word_erros);
 
@@ -395,8 +439,12 @@ void init(){
   config.langauge = "en";
   config.mode = "sentence";
   config.average_wpm= 0;
+  config.words = 0;
   config.average_erros = 0;
+  config.erros = 0;
   config.average_word_erros = 0;
+  config.word_erros = 0;
+  config.attemps = 0;
 }
 
 int main(){
@@ -407,3 +455,4 @@ int main(){
 
   return 0;
 }
+
