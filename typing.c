@@ -14,7 +14,13 @@
 #include <termios.h>            
 #include <time.h>
 #include <assert.h>
+#include <errno.h> 
 
+#define MOVE_UP(y) printf("\033[%dA",(y))
+#define MOVE_DOWN(y) printf("\033[%dB",(y))
+#define MOVE_RIGHT(x) printf("\033[%dC",(x))
+#define MOVE_LEFT(x) printf("\033[%dD",(x))
+#define CTRL_KEY(k) ((k) & 0x1f)
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
 #define ANSI_COLOR_YELLOW  "\x1b[33m"
@@ -32,6 +38,30 @@ enum Keys{
   ARROW_DOWN,
   DEL_KEY,
 };
+
+struct typing_config{
+  char *langauge;
+  char *mode;
+  double average_wpm;
+  double average_erros;
+  double average_word_erros;
+};
+
+struct typing_config config;
+
+char *langauges[] = {
+  "en",
+  "de",
+};
+enum{NUM_LANGUGES= sizeof(langauges) / sizeof(langauges[0])};
+
+
+char *modes[] = {
+  "sentencs",
+  "quotes",
+};
+enum{NUM_MODES= sizeof(modes) / sizeof(modes[0])};
+
 
 
 void die(const char* error_message){
@@ -62,19 +92,108 @@ void enableRawMode(){
 void disableRawMode(){
   printf("\e[?25h");
 }
-
 char read_input(){
   char c;
   c = getchar();
   switch(c){
-    case '\x1b': 
+    case CTRL_KEY('q'): 
       disableRawMode();
       exit(1);
     default:
       return c;
   }
+}
+
+void menu(){
+  int pos, pos2;
+  char c, l;
+  printf("%s", ANSI_CLEAR_SCREEN);
+  printf("\e[?25h");
+  printf("LANGAUGE| \nMODE\t| ");
+  MOVE_UP(1);
+
+  pos = 0;
+  
+  while(1){
+
+    c = read_input();
+
+    switch(c){
+      case 'w':
+        if(pos > 0){
+          pos--;
+          MOVE_UP(1);
+        }
+        continue;
+      case 's':
+        if(pos < 2){
+          pos++;
+          MOVE_DOWN(1);
+        }
+        continue;
+      case '\n':
+
+        pos2 = 0;
+        if(pos == 0){
+          printf("%s",ANSI_CLEAR_SCREEN);
+          for(int i=0; i<NUM_LANGUGES;i++) printf("%s\n", langauges[i]);
+
+          while(1){
+            
+            l = read_input();
+            switch(l){
+
+            case 'w':
+              if(pos2> 0){
+                pos2--;
+                MOVE_UP(1);
+              }
+              continue;
+            case 's':
+              if(pos2< 2){
+                pos2++;
+                MOVE_DOWN(1);
+              }
+              continue;
+            case '\n':
+              config.langauge = langauges[pos2];
+            }
+          }
+        }else if(pos == 1){
+          printf("%s",ANSI_CLEAR_SCREEN);
+          for(int i=0; i<NUM_MODES; i++) printf("%s\n", modes[i]);
+          while(1){
+            l = read_input();
+            switch(l){
+
+            case 'w':
+              if(pos2> 0){
+                pos2--;
+                MOVE_UP(1);
+              }
+              continue;
+            case 's':
+              if(pos < 2){
+                pos++;
+                MOVE_DOWN(1);
+              }
+              continue;
+            case '\n':
+              config.mode = modes[pos2];
+            }
+          }
+        }
+        continue;
+      case '\x1b': 
+        printf("\e[?25h");
+        return;
+    }
+  }
 
 }
+
+
+
 
 int count_words(const char sentence[]){
     int counted = 0; // result
@@ -150,6 +269,7 @@ void display_stats(int wpm, int typing_erros, int word_erros){
   printf("\n%s----------------------------------------------%s\n",ANSI_COLOR_BLUE,ANSI_COLOR_RESET);
   printf("WPM: %d\n",wpm);
   printf("%sTYPING ERROS:: %d\n",ANSI_COLOR_RED, typing_erros);
+  printf("%sTYPING ERROS:: %d\n",ANSI_COLOR_MAGENTA, word_erros);
   printf("%s----------------------------------------------%s",ANSI_COLOR_BLUE,ANSI_COLOR_RESET);
 }
 
@@ -178,10 +298,21 @@ int randint(int n) {
 
 char *get_sentence(){
   char line[200][256];
-  char *fname = "sentences.txt";
+  char *fname; 
   FILE *fptr = NULL; 
   int i = 0;
   int tot = 0;
+
+  if(strcmp(config.langauge ,"en") == 0){
+    if(strcmp(config.mode, "sentence") == 0){
+      fname = "english_sentences.txt";
+    }else if(strcmp(config.mode, "quote") == 0){
+      fname = "sentences.txt";
+    }
+  }else if(strcmp(config.langauge ,"de") == 0){
+  
+  }
+
 
   fptr = fopen(fname, "r");
   while(fgets(line[i], 200, fptr)) 
@@ -225,6 +356,7 @@ void mainloop(){
       if(text_pos == text_len) break;
 
       input = read_input();
+      if(input == '\x1b') menu();
       total_input[text_pos] = input; 
       if(text_pos != 0 && input == BACKSPACE){
         text_pos--;
@@ -233,7 +365,7 @@ void mainloop(){
         printf("%s%c",ANSI_COLOR_YELLOW, text[text_pos]);
         printf("%s%s",ANSI_COLOR_RESET, &(text[text_pos+1]));
 
-        typing_erros--;
+        if(typing_erros > 0) typing_erros--;
 
         continue;
       }
@@ -260,12 +392,18 @@ void mainloop(){
 
 
 void init(){
-  enableRawMode();
-  mainloop();
-  disableRawMode();
+  config.langauge = "en";
+  config.mode = "sentence";
+  config.average_wpm= 0;
+  config.average_erros = 0;
+  config.average_word_erros = 0;
 }
 
 int main(){
   init();
+  enableRawMode();
+  mainloop();
+  disableRawMode();
+
   return 0;
 }
